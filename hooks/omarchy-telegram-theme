@@ -1,0 +1,18 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-only
+
+# Omarchy passes the new theme slug as $1 after its current/theme state is ready.
+theme_name="${1:-unknown}"
+generator="$HOME/.local/bin/omarchy-telegram-theme"
+
+if [[ ! -x $generator ]]; then
+  logger -t omarchy-telegram-theme "generator is missing: $generator"
+  exit 0
+fi
+
+if ! "$generator" --theme "$theme_name" >/dev/null 2>&1; then
+  logger -t omarchy-telegram-theme "failed to generate Telegram theme for $theme_name"
+fi
+
+# Theme hooks must never make the parent Omarchy theme switch fail.
+exit 0
