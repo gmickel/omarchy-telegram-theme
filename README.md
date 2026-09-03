@@ -64,6 +64,11 @@ uses the same semantic fallbacks as Omarchy itself, including legacy short-name
 and ANSI `color0` through `color15` palettes, derived background shades, and
 automatic dark/light mode detection.
 
+Telegram's small secondary labels and inactive icons are contrast-checked
+against their surfaces. Theme colors that already meet the readability floor
+are preserved; lower-contrast colors are moved toward the theme foreground just
+far enough to reach 4.5:1 for text or 3:1 for icons.
+
 The generator starts with Telegram Desktop's official custom-theme palette,
 recolors every literal (which prevents obscure dialogs from falling back to the
 blue/white day palette), and applies explicit mappings for primary surfaces,

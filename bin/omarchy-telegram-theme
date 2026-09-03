@@ -254,6 +254,27 @@ def contrast_ratio(first: str, second: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
+def ensure_contrast(
+    color: str,
+    background: str,
+    preferred: str,
+    minimum: float,
+) -> str:
+    """Move a theme color only as far as needed to remain readable."""
+    if contrast_ratio(color, background) >= minimum:
+        return color
+
+    target = max(
+        (preferred, "#000000", "#ffffff"),
+        key=lambda candidate: contrast_ratio(candidate, background),
+    )
+    for step in range(1, 21):
+        candidate = mix(color, target, step / 20)
+        if contrast_ratio(candidate, background) >= minimum:
+            return candidate
+    return target
+
+
 def nearest_semantic_color(
     hue: float, colors: dict[str, str]
 ) -> str:
@@ -335,6 +356,12 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
     active_ripple = mix(accent, bright_fg, 0.22)
     sent_bg = mix(bg, accent, 0.18 if colors["mode"] == "dark" else 0.11)
     sent_selected = mix(sent_bg, selection, 0.58)
+    secondary_fg = ensure_contrast(dark_fg, bg, fg, 4.5)
+    secondary_over_fg = ensure_contrast(light_fg, lighter_bg, bright_fg, 4.5)
+    secondary_dark_fg = ensure_contrast(dark_fg, dark_bg, fg, 4.5)
+    message_secondary_fg = ensure_contrast(dark_fg, lighter_bg, fg, 4.5)
+    icon_fg = ensure_contrast(dark_fg, bg, fg, 3.0)
+    icon_dark_fg = ensure_contrast(dark_fg, dark_bg, fg, 3.0)
 
     result = {
         "windowBg": bg,
@@ -342,8 +369,8 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "windowBgOver": lighter_bg,
         "windowBgRipple": selection,
         "windowFgOver": bright_fg,
-        "windowSubTextFg": dark_fg,
-        "windowSubTextFgOver": light_fg,
+        "windowSubTextFg": secondary_fg,
+        "windowSubTextFgOver": secondary_over_fg,
         "windowBoldFg": bright_fg,
         "windowBoldFgOver": bright_fg,
         "windowBgActive": accent,
@@ -379,17 +406,17 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "menuBg": bg,
         "menuBgOver": lighter_bg,
         "menuBgRipple": selection,
-        "menuIconFg": dark_fg,
+        "menuIconFg": icon_fg,
         "menuIconFgOver": bright_fg,
-        "menuSubmenuArrowFg": light_fg,
+        "menuSubmenuArrowFg": secondary_over_fg,
         "menuFgDisabled": muted,
         "menuSeparatorFg": dark_bg,
         "scrollBarBg": rgba(muted, "73"),
         "scrollBarBgOver": rgba(muted, "a6"),
         "scrollBg": rgba(muted, "24"),
         "scrollBgOver": rgba(muted, "40"),
-        "placeholderFg": dark_fg,
-        "placeholderFgActive": light_fg,
+        "placeholderFg": secondary_fg,
+        "placeholderFgActive": secondary_over_fg,
         "inputBorderFg": muted,
         "filterInputBorderFg": accent,
         "filterInputActiveBg": bg,
@@ -404,18 +431,18 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "titleShadow": "#00000018",
         "titleBg": dark_bg,
         "titleBgActive": bg,
-        "titleFg": dark_fg,
+        "titleFg": secondary_dark_fg,
         "titleFgActive": fg,
         "boxBg": bg,
         "boxTextFg": fg,
         "boxTextFgGood": green,
         "boxTextFgError": red,
         "boxTitleFg": bright_fg,
-        "boxTitleAdditionalFg": dark_fg,
+        "boxTitleAdditionalFg": secondary_fg,
         "dialogsBg": bg,
         "dialogsNameFg": bright_fg,
-        "dialogsDateFg": dark_fg,
-        "dialogsTextFg": dark_fg,
+        "dialogsDateFg": secondary_fg,
+        "dialogsTextFg": secondary_fg,
         "dialogsTextFgService": accent,
         "dialogsDraftFg": red,
         "dialogsVerifiedIconBg": accent,
@@ -427,8 +454,8 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "dialogsOnlineBadgeFg": green,
         "dialogsBgOver": lighter_bg,
         "dialogsNameFgOver": bright_fg,
-        "dialogsDateFgOver": light_fg,
-        "dialogsTextFgOver": light_fg,
+        "dialogsDateFgOver": secondary_over_fg,
+        "dialogsTextFgOver": secondary_over_fg,
         "dialogsBgActive": accent,
         "dialogsNameFgActive": active_fg,
         "dialogsDateFgActive": active_fg,
@@ -437,13 +464,13 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "dialogsSendingIconFgActive": rgba(active_fg, "99"),
         "dialogsOnlineBadgeFgActive": active_fg,
         "searchedBarBg": dark_bg,
-        "searchedBarFg": light_fg,
+        "searchedBarFg": secondary_dark_fg,
         "topBarBg": bg,
         "emojiPanBg": bg,
         "emojiPanCategories": dark_bg,
-        "emojiPanHeaderFg": dark_fg,
+        "emojiPanHeaderFg": secondary_fg,
         "emojiPanHeaderBg": rgba(bg, "f2"),
-        "emojiIconFg": dark_fg,
+        "emojiIconFg": icon_fg,
         "emojiIconFgActive": accent,
         "stickerPanDeleteBg": "#000000",
         "historyTextInFg": fg,
@@ -451,7 +478,7 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "historyLinkInFg": accent,
         "historyLinkOutFg": accent,
         "historyOutIconFg": accent,
-        "historySendingOutIconFg": dark_fg,
+        "historySendingOutIconFg": icon_fg,
         "historyUnreadBarBg": dark_bg,
         "historyUnreadBarFg": accent,
         "historyForwardChooseBg": "#0000004c",
@@ -467,8 +494,8 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "msgInShadowSelected": "#00000030",
         "msgOutShadow": "#00000024",
         "msgOutShadowSelected": "#00000030",
-        "msgInDateFg": dark_fg,
-        "msgInDateFgSelected": light_fg,
+        "msgInDateFg": message_secondary_fg,
+        "msgInDateFgSelected": secondary_over_fg,
         "msgOutDateFg": mix(fg, accent, 0.62),
         "msgOutDateFgSelected": mix(fg, accent, 0.48),
         "msgServiceFg": active_fg,
@@ -489,7 +516,7 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "msgBotKbRippleBg": "#00000020",
         "historyComposeAreaBg": bg,
         "historyComposeAreaFg": fg,
-        "historyComposeIconFg": dark_fg,
+        "historyComposeIconFg": icon_fg,
         "historyComposeIconFgOver": bright_fg,
         "historySendIconFg": accent,
         "historySendIconFgOver": active_over,
@@ -509,7 +536,7 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "notificationBg": bg,
         "mediaviewFileBg": bg,
         "mediaviewFileNameFg": fg,
-        "mediaviewFileSizeFg": dark_fg,
+        "mediaviewFileSizeFg": secondary_fg,
         "mediaviewMenuBg": darker_bg,
         "mediaviewMenuBgOver": dark_bg,
         "mediaviewMenuBgRipple": lighter_bg,
@@ -537,7 +564,7 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "groupCallMemberInactiveIcon": muted,
         "groupCallMemberInactiveStatus": accent,
         "groupCallMemberMutedIcon": red,
-        "groupCallMemberNotJoinedStatus": dark_fg,
+        "groupCallMemberNotJoinedStatus": secondary_dark_fg,
         "groupCallIconFg": bright_fg,
         "groupCallLeaveBg": rgba(red, "9e"),
         "groupCallLeaveBgRipple": rgba(red, "c0"),
@@ -546,9 +573,9 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "sideBarBg": dark_bg,
         "sideBarBgActive": bg,
         "sideBarBgRipple": selection,
-        "sideBarTextFg": dark_fg,
+        "sideBarTextFg": secondary_dark_fg,
         "sideBarTextFgActive": accent,
-        "sideBarIconFg": dark_fg,
+        "sideBarIconFg": icon_dark_fg,
         "sideBarIconFgActive": accent,
         "sideBarBadgeBg": accent,
         "sideBarBadgeBgMuted": muted,

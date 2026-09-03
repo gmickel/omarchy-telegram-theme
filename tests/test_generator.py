@@ -105,6 +105,7 @@ class GeneratorTest(unittest.TestCase):
 
     def test_legacy_ansi_palette_uses_omarchy_fallbacks(self):
         colors, output = self.generate(LEGACY)
+        overrides = generator.palette_overrides(colors)
 
         self.assertEqual(colors["mode"], "dark")
         self.assertEqual(colors["selection"], "#ebdbb2")
@@ -121,6 +122,28 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(colors["magenta"], "#bfa75d")
         self.assertEqual(colors["cyan"], "#7a6a2c")
         self.assertIn("windowBg: #0d0d0d;", output)
+
+        readable_pairs = (
+            ("windowSubTextFg", "windowBg"),
+            ("dialogsDateFg", "dialogsBg"),
+            ("dialogsTextFg", "dialogsBg"),
+            ("msgInDateFg", "msgInBg"),
+            ("sideBarTextFg", "sideBarBg"),
+        )
+        for foreground, background in readable_pairs:
+            self.assertGreaterEqual(
+                generator.contrast_ratio(
+                    overrides[foreground], overrides[background]
+                ),
+                4.5,
+                foreground,
+            )
+        self.assertGreaterEqual(
+            generator.contrast_ratio(
+                overrides["menuIconFg"], overrides["menuBg"]
+            ),
+            3.0,
+        )
 
     def test_light_mode_marker_supports_legacy_palettes(self):
         with tempfile.TemporaryDirectory() as temporary:
