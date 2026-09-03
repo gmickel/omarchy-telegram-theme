@@ -94,6 +94,99 @@ def normalize_hex(value: object, key: str) -> str:
     return value.lower()
 
 
+def first_color(document: dict[str, object], *keys: str) -> object | None:
+    return next((document[key] for key in keys if document.get(key)), None)
+
+
+def resolve_omarchy_colors(
+    document: dict[str, object], colors_path: Path
+) -> dict[str, str]:
+    """Resolve legacy palettes using Omarchy's semantic-color fallbacks."""
+    resolved = dict(document)
+
+    legacy_palette_aliases = {
+        "background": "bg",
+        "dark_background": "dark_bg",
+        "darker_background": "darker_bg",
+        "lighter_background": "lighter_bg",
+        "foreground": "fg",
+        "dark_foreground": "dark_fg",
+        "light_foreground": "light_fg",
+        "bright_foreground": "bright_fg",
+    }
+    for canonical, legacy in legacy_palette_aliases.items():
+        if not resolved.get(canonical) and resolved.get(legacy):
+            resolved[canonical] = resolved[legacy]
+
+    if not resolved.get("background"):
+        resolved["background"] = resolved.get("color0")
+    if not resolved.get("foreground"):
+        resolved["foreground"] = resolved.get("color7")
+    if resolved.get("background"):
+        resolved["color0"] = resolved["background"]
+    if resolved.get("foreground"):
+        resolved["color7"] = resolved["foreground"]
+
+    ansi_aliases = {
+        "red": "color1",
+        "green": "color2",
+        "yellow": "color3",
+        "blue": "color4",
+        "magenta": "color5",
+        "cyan": "color6",
+    }
+    for semantic, ansi in ansi_aliases.items():
+        if not resolved.get(semantic) and resolved.get(ansi):
+            resolved[semantic] = resolved[ansi]
+    if not resolved.get("magenta") and resolved.get("purple"):
+        resolved["magenta"] = resolved["purple"]
+
+    resolved["light_foreground"] = first_color(
+        resolved, "light_foreground", "color7", "foreground"
+    )
+    resolved["bright_foreground"] = first_color(
+        resolved, "bright_foreground", "color15", "foreground"
+    )
+    resolved["lighter_background"] = first_color(
+        resolved, "lighter_background", "color0", "background"
+    )
+    resolved["dark_foreground"] = first_color(
+        resolved, "dark_foreground", "color8", "foreground"
+    )
+    resolved["muted"] = first_color(
+        resolved, "muted", "color8", "dark_foreground"
+    )
+    resolved["selection"] = first_color(
+        resolved,
+        "selection",
+        "selection_background",
+        "color8",
+        "color0",
+        "background",
+    )
+
+    background = normalize_hex(resolved.get("background"), "background")
+    if not resolved.get("dark_background"):
+        resolved["dark_background"] = mix(background, "#000000", 0.25)
+    if not resolved.get("darker_background"):
+        resolved["darker_background"] = mix(background, "#000000", 0.50)
+
+    mode = first_color(resolved, "mode", "theme_type")
+    if not mode:
+        if (colors_path.parent / "light.mode").is_file():
+            mode = "light"
+        else:
+            red, green, blue = rgb(background)
+            mode = "light" if red + green + blue > 382 else "dark"
+    if mode not in ("dark", "light"):
+        raise ThemeError(f"mode must be 'dark' or 'light', got {mode!r}")
+
+    colors = {"mode": mode}
+    for key in REQUIRED_COLORS:
+        colors[key] = normalize_hex(resolved.get(key), key)
+    return colors
+
+
 def read_omarchy_colors(path: Path) -> dict[str, str]:
     try:
         with path.open("rb") as stream:
@@ -103,14 +196,7 @@ def read_omarchy_colors(path: Path) -> dict[str, str]:
     except tomllib.TOMLDecodeError as error:
         raise ThemeError(f"invalid TOML in {path}: {error}") from error
 
-    mode = document.get("mode")
-    if mode not in ("dark", "light"):
-        raise ThemeError(f"mode must be 'dark' or 'light', got {mode!r}")
-
-    colors = {"mode": mode}
-    for key in REQUIRED_COLORS:
-        colors[key] = normalize_hex(document.get(key), key)
-    return colors
+    return resolve_omarchy_colors(document, path)
 
 
 def read_base_palette(path: Path) -> str:
@@ -132,7 +218,8 @@ def rgb(value: str) -> tuple[int, int, int]:
 
 
 def hex_color(value: tuple[float, float, float]) -> str:
-    channels = tuple(max(0, min(255, round(channel))) for channel in value)
+    # Match Omarchy's awk mixer, which rounds channel midpoints up.
+    channels = tuple(max(0, min(255, int(channel + 0.5))) for channel in value)
     return "#{:02x}{:02x}{:02x}".format(*channels)
 
 

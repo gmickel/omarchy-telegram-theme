@@ -59,7 +59,10 @@ Omarchy 4 builds a staged theme, atomically moves it to
 `~/.local/state/omarchy/current/theme`, then runs every script in
 `~/.config/omarchy/hooks/theme-set.d/` with the new theme slug. The hook in this
 project reads the resulting `colors.toml`, not the source theme folder, so stock
-themes, user overlays, and generated legacy themes all behave the same way.
+themes, user overlays, and generated legacy themes all behave the same way. It
+uses the same semantic fallbacks as Omarchy itself, including legacy short-name
+and ANSI `color0` through `color15` palettes, derived background shades, and
+automatic dark/light mode detection.
 
 The generator starts with Telegram Desktop's official custom-theme palette,
 recolors every literal (which prevents obscure dialogs from falling back to the
@@ -67,7 +70,8 @@ blue/white day palette), and applies explicit mappings for primary surfaces,
 text, active states, chat bubbles, semantic colors, calls, and the filter
 sidebar. It also packages a `background.png` filled with Omarchy's `background`
 color, so applying the generated theme sets the chat wallpaper too. It supports
-both Omarchy `mode = "dark"` and `mode = "light"`.
+explicit Omarchy `mode = "dark"` and `mode = "light"` values, the legacy
+`theme_type` key and `light.mode` marker, and luminance-based mode detection.
 
 The outer file keeps the `.tdesktop-palette` extension because Telegram's
 hidden `loadcolors` picker only shows that suffix. Telegram detects the ZIP

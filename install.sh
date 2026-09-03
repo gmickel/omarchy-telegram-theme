@@ -21,6 +21,12 @@ python -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' || {
   exit 1
 }
 
+# Validate the active palette before installing anything, so an unsupported or
+# malformed theme cannot leave behind a partial binary, data file, or hook.
+python "$project_dir/bin/omarchy-telegram-theme" \
+  --base-palette "$project_dir/assets/day-custom-base.palette.gz.b64" \
+  --check >/dev/null
+
 install -Dm755 "$project_dir/bin/omarchy-telegram-theme" \
   "$bin_dir/omarchy-telegram-theme"
 install -Dm644 "$project_dir/assets/day-custom-base.palette.gz.b64" \

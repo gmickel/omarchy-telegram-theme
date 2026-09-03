@@ -47,6 +47,32 @@ LIGHT = DARK.replace('mode = "dark"', 'mode = "light"').replace(
     'background = "#1a1b26"', 'background = "#eff1f5"'
 ).replace('foreground = "#a9b1d6"', 'foreground = "#4c4f69"')
 
+LEGACY = """\
+accent = "#6E6A58"
+cursor = "#a3850e"
+foreground = "#ebdbb2"
+background = "#0D0D0D"
+selection_foreground = "#0D0D0D"
+selection_background = "#ebdbb2"
+
+color0 = "#0D0D0D"
+color1 = "#D35F5F"
+color2 = "#a3850e"
+color3 = "#4D574E"
+color4 = "#6E6A58"
+color5 = "#BFA75D"
+color6 = "#7A6A2C"
+color7 = "#F6F1DD"
+color8 = "#303531"
+color9 = "#D35F5F"
+color10 = "#a3850e"
+color11 = "#4D574E"
+color12 = "#6E6A58"
+color13 = "#BFA75D"
+color14 = "#7A6A2C"
+color15 = "#F6F1DD"
+"""
+
 
 class GeneratorTest(unittest.TestCase):
     def generate(self, document: str):
@@ -76,6 +102,36 @@ class GeneratorTest(unittest.TestCase):
         self.assertIn("windowBg: #eff1f5;", output)
         self.assertIn("windowFg: #4c4f69;", output)
         self.assertIn("Omarchy theme: fixture (light)", output)
+
+    def test_legacy_ansi_palette_uses_omarchy_fallbacks(self):
+        colors, output = self.generate(LEGACY)
+
+        self.assertEqual(colors["mode"], "dark")
+        self.assertEqual(colors["selection"], "#ebdbb2")
+        self.assertEqual(colors["muted"], "#303531")
+        self.assertEqual(colors["dark_background"], "#0a0a0a")
+        self.assertEqual(colors["darker_background"], "#070707")
+        self.assertEqual(colors["lighter_background"], "#0d0d0d")
+        self.assertEqual(colors["light_foreground"], "#ebdbb2")
+        self.assertEqual(colors["bright_foreground"], "#f6f1dd")
+        self.assertEqual(colors["red"], "#d35f5f")
+        self.assertEqual(colors["green"], "#a3850e")
+        self.assertEqual(colors["yellow"], "#4d574e")
+        self.assertEqual(colors["blue"], "#6e6a58")
+        self.assertEqual(colors["magenta"], "#bfa75d")
+        self.assertEqual(colors["cyan"], "#7a6a2c")
+        self.assertIn("windowBg: #0d0d0d;", output)
+
+    def test_light_mode_marker_supports_legacy_palettes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            path = directory / "colors.toml"
+            path.write_text(LEGACY.replace("#0D0D0D", "#F0F0F0"))
+            (directory / "light.mode").touch()
+
+            colors = generator.read_omarchy_colors(path)
+
+        self.assertEqual(colors["mode"], "light")
 
     def test_generated_palette_has_no_duplicate_keys(self):
         _, output = self.generate(DARK)
