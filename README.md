@@ -112,3 +112,9 @@ SHA-256 is `7ba0c1f51af0fb1b7cc115f4a8ce1467caf0013ff5081614d620440d63e1b865`.
 
 GPL-3.0-only. The bundled base palette is derived from Telegram Desktop, which
 is GPLv3 with Telegram's documented OpenSSL exception. See [NOTICE.md](NOTICE.md).
+
+## CI
+
+Pull requests and main pushes run the deterministic checks in
+`.github/workflows/ci.yml`. Superseded PR runs are cancelled.
+Desktop, theme and live-account acceptance remain local; CI uses no workstation credentials.
