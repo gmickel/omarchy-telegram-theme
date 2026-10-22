@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 *.tdesktop-theme
 *.tdesktop-palette
+generated/omarchy.tdesktop-theme
+generated/omarchy.tdesktop-palette
+generated/README.txt

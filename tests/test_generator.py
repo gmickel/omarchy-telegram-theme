@@ -188,10 +188,17 @@ class GeneratorTest(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(package)) as archive:
             self.assertEqual(
                 archive.namelist(),
-                ["colors.tdesktop-palette", "background.png"],
+                [
+                    "colors.tdesktop-theme",
+                    "colors.tdesktop-palette",
+                    "background.png",
+                ],
             )
             self.assertEqual(
                 archive.read("colors.tdesktop-palette").decode(), palette
+            )
+            self.assertEqual(
+                archive.read("colors.tdesktop-theme").decode(), palette
             )
             png = archive.read("background.png")
 
@@ -236,6 +243,78 @@ class GeneratorTest(unittest.TestCase):
             self.assertTrue(generator.write_if_changed(output, b"PK\x03\x04first"))
             self.assertFalse(generator.write_if_changed(output, b"PK\x03\x04first"))
             self.assertEqual(output.read_bytes(), b"PK\x03\x04first")
+
+    def test_writer_preserves_inode_on_update(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "theme.tdesktop-palette"
+            self.assertTrue(generator.write_if_changed(output, b"PK\x03\x04first"))
+            first_inode = output.stat().st_ino
+            self.assertTrue(generator.write_if_changed(output, b"PK\x03\x04second"))
+            self.assertEqual(output.stat().st_ino, first_inode)
+            self.assertEqual(output.read_bytes(), b"PK\x03\x04second")
+
+    def test_message_bubbles_are_easy_to_tell_apart(self):
+        for document in (DARK, LIGHT, LEGACY):
+            colors, _ = self.generate(document)
+            overrides = generator.palette_overrides(colors)
+            distance = generator.color_distance(
+                overrides["msgInBg"], overrides["msgOutBg"]
+            )
+            minimum = 55.0 if colors["mode"] == "dark" else 50.0
+            self.assertGreaterEqual(
+                distance,
+                minimum,
+                f"bubbles too similar for mode={colors['mode']}: "
+                f"in={overrides['msgInBg']} out={overrides['msgOutBg']} "
+                f"distance={distance:.1f}",
+            )
+            self.assertGreaterEqual(
+                generator.contrast_ratio(
+                    overrides["historyTextInFg"], overrides["msgInBg"]
+                ),
+                3.0,
+            )
+            self.assertGreaterEqual(
+                generator.contrast_ratio(
+                    overrides["historyTextOutFg"], overrides["msgOutBg"]
+                ),
+                3.0,
+            )
+
+    def test_on_bubble_chrome_stays_readable(self):
+        """Reply names + read receipts must contrast against bubble fills."""
+        for document in (DARK, LIGHT, LEGACY):
+            colors, _ = self.generate(document)
+            overrides = generator.palette_overrides(colors)
+            text_pairs = (
+                ("msgInServiceFg", "msgInBg", 4.5),
+                ("msgOutServiceFg", "msgOutBg", 4.5),
+                ("msgInServiceFgSelected", "msgInBgSelected", 4.5),
+                ("msgOutServiceFgSelected", "msgOutBgSelected", 4.5),
+                ("historyLinkInFg", "msgInBg", 4.5),
+                ("historyLinkOutFg", "msgOutBg", 4.5),
+                ("msgInMonoFg", "msgInBg", 4.5),
+                ("msgOutMonoFg", "msgOutBg", 4.5),
+                ("msgInDateFg", "msgInBg", 4.5),
+                ("msgOutDateFg", "msgOutBg", 4.5),
+            )
+            icon_pairs = (
+                ("historyOutIconFg", "msgOutBg", 3.5),
+                ("historyOutIconFgSelected", "msgOutBgSelected", 3.5),
+                ("msgInReplyBarColor", "msgInBg", 3.0),
+                ("msgOutReplyBarColor", "msgOutBg", 3.0),
+            )
+            for foreground, background, minimum in text_pairs + icon_pairs:
+                ratio = generator.contrast_ratio(
+                    overrides[foreground], overrides[background]
+                )
+                self.assertGreaterEqual(
+                    ratio,
+                    minimum,
+                    f"{foreground} on {background} for mode={colors['mode']}: "
+                    f"{overrides[foreground]} / {overrides[background]} "
+                    f"contrast={ratio:.2f}",
+                )
 
 
 if __name__ == "__main__":

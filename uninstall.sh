@@ -12,4 +12,4 @@ rmdir -- "$(dirname -- "$(dirname -- "$data_file")")" 2>/dev/null || true
 rmdir -- "$(dirname -- "$hook")" 2>/dev/null || true
 
 echo "Uninstalled Omarchy Telegram Theme."
-echo "The generated .tdesktop-palette was retained because Telegram may still reference it."
+echo "Generated theme files were retained because Telegram may still reference their path."

@@ -11,7 +11,7 @@ depend on a third-party Telegram client.
 ## Requirements
 
 - Omarchy 4.x
-- Native Telegram Desktop (tested with Arch package `telegram-desktop` 7.0.9)
+- Native Telegram Desktop (tested with Arch package `telegram-desktop` 7.0.9+)
 - Python 3.11+
 
 ## Install
@@ -21,19 +21,26 @@ depend on a third-party Telegram client.
 ```
 
 Telegram requires a one-time activation because it does not expose a public
-theme-apply command or D-Bus method:
+theme-apply command or D-Bus method. Prefer the normal Chat settings UI:
 
-1. Open Telegram **Settings**.
-2. Type `loadcolors` while the Settings screen is focused.
-3. Choose
-   `~/.local/state/omarchy-telegram-theme/omarchy.tdesktop-palette`.
-4. Click **Keep changes**.
+1. Open Telegram → **Settings** → **Chat settings**.
+2. Open the **⋮** menu (top-right) → **Create new theme** → **Import existing theme**.
+3. Choose the generated file printed by `install.sh` (by default  
+   `<checkout>/generated/omarchy.tdesktop-theme`).
+4. Click **Keep changes** / Apply.
 
-Because `.local` is hidden, press `Ctrl+L` in the file picker and paste the
-full path, or press `Ctrl+H` to show hidden folders.
+After that, `omarchy theme set <name>` regenerates the **same** file in place.
+Telegram's file watcher reloads colors while the app is running.
 
-After that, `omarchy theme set <name>` automatically regenerates the same file.
-Telegram reloads it while running and reads it again on later launches.
+> Tip: avoid copying the theme into Downloads. Telegram watches the exact path
+> you import; keep using the stable generated path from this checkout.
+
+### Legacy `loadcolors` activation
+
+The hidden Settings code `loadcolors` still works if you prefer it: focus
+Settings (not the search box), type `loadcolors`, then pick the sibling
+`.tdesktop-palette` hard-link next to the `.tdesktop-theme` file. Do not use
+desktop lock shortcuts while picking the file.
 
 To regenerate or inspect the palette manually:
 
@@ -67,7 +74,14 @@ automatic dark/light mode detection.
 Telegram's small secondary labels and inactive icons are contrast-checked
 against their surfaces. Theme colors that already meet the readability floor
 are preserved; lower-contrast colors are moved toward the theme foreground just
-far enough to reach 4.5:1 for text or 3:1 for icons.
+far enough to reach 4.5:1 for text or 3:1 for icons. Chat chrome that sits
+**on** message bubbles (reply author names, read-receipt ticks, links, mono
+text, reply bars) is contrast-checked against the actual bubble fill — not only
+against the window background — so accent-tinted outgoing bubbles stay readable.
+
+Incoming and outgoing bubbles are picked from the Omarchy palette with enough
+RGB separation that “my messages” and “their messages” stay easy to tell apart,
+while message body text remains contrast-safe on both fills.
 
 The generator starts with Telegram Desktop's official custom-theme palette,
 recolors every literal (which prevents obscure dialogs from falling back to the
@@ -78,14 +92,16 @@ color, so applying the generated theme sets the chat wallpaper too. It supports
 explicit Omarchy `mode = "dark"` and `mode = "light"` values, the legacy
 `theme_type` key and `light.mode` marker, and luminance-based mode detection.
 
-The outer file keeps the `.tdesktop-palette` extension because Telegram's
-hidden `loadcolors` picker only shows that suffix. Telegram detects the ZIP
-theme package by its contents and loads the embedded palette and wallpaper.
+The theme package is a ZIP that includes both `colors.tdesktop-theme` and
+`colors.tdesktop-palette` plus `background.png`. The installer writes
+`generated/omarchy.tdesktop-theme` and a same-inode `.tdesktop-palette` sibling
+so either Import-theme or `loadcolors` can watch one file.
 
-Writes are atomic and skipped when content is unchanged. Telegram Desktop's
-theme implementation attaches a `QFileSystemWatcher` to a native custom theme
-path and reapplies it after `fileChanged`, which is why the stable-file approach
-updates a running instance without poking its settings database.
+Updates overwrite that file **in place** (same inode) and are skipped when
+content is unchanged. Atomic replace is avoided on purpose: Telegram's
+`QFileSystemWatcher` drops watches when the inode changes, which silently
+breaks live Omarchy theme sync. With in-place writes, Telegram reapplies the
+palette after `fileChanged` without poking its settings database.
 
 ## Verification
 

@@ -62,12 +62,24 @@ def default_colors_file() -> Path:
 
 
 def default_output_file() -> Path:
+    # Prefer an explicit override, then a self-contained checkout path, then XDG.
+    override = os.environ.get("OMARCHY_TELEGRAM_THEME_OUTPUT")
+    if override:
+        return Path(override).expanduser()
+
+    repo_output = (
+        Path(__file__).resolve().parent.parent
+        / "generated"
+        / "omarchy.tdesktop-theme"
+    )
+    if (repo_output.parent.parent / "install.sh").is_file():
+        return repo_output
+
     state_home = xdg_path("XDG_STATE_HOME", Path.home() / ".local/state")
-    # Telegram's hidden Settings code `loadcolors` uses the file-dialog filter
-    # "Palette (*.tdesktop-palette)" before passing the selected path to Apply().
-    # Apply() detects ZIP themes by content, so this extension can still carry
-    # both colors.tdesktop-palette and a chat background image.
-    return state_home / "omarchy-telegram-theme/omarchy.tdesktop-palette"
+    # Prefer .tdesktop-theme so Settings → Chat settings → Import existing theme
+    # can see it. ZIP content still includes colors.tdesktop-palette for loaders
+    # that look for that inner name.
+    return state_home / "omarchy-telegram-theme/omarchy.tdesktop-theme"
 
 
 def find_base_palette() -> Path:
@@ -275,6 +287,81 @@ def ensure_contrast(
     return target
 
 
+def color_distance(first: str, second: str) -> float:
+    """Euclidean RGB distance; used to keep chat bubbles distinguishable."""
+    one, two = rgb(first), rgb(second)
+    return sum((a - b) ** 2 for a, b in zip(one, two)) ** 0.5
+
+
+def message_bubble_colors(colors: dict[str, str]) -> tuple[str, str, str, str]:
+    """Pick incoming/outgoing bubble colors that stay in-theme but read apart.
+
+    Previous logic tinted outgoing bubbles with only ~11–18% accent, so on
+    green/teal Omarchy themes they looked almost identical to incoming
+    (lighter_background) bubbles.
+    """
+    bg = colors["background"]
+    dark_bg = colors["dark_background"]
+    lighter_bg = colors["lighter_background"]
+    accent = colors["accent"]
+    selection = colors["selection"]
+    muted = colors["muted"]
+    cyan = colors["cyan"]
+    blue = colors["blue"]
+    green = colors["green"]
+    fg = colors["foreground"]  # used for light-mode incoming fallback
+
+    # Minimum separation that still feels obvious in a dense chat transcript.
+    # Message text contrast is handled separately via historyText*Fg.
+    min_distance = 55.0 if colors["mode"] == "dark" else 50.0
+
+    if colors["mode"] == "dark":
+        # Incoming: neutral lifted surface (their messages).
+        received = mix(bg, lighter_bg, 0.90)
+        sent_candidates = (
+            mix(bg, accent, 0.48),
+            mix(dark_bg, accent, 0.55),
+            mix(bg, accent, 0.62),
+            mix(mix(bg, accent, 0.40), cyan, 0.35),
+            mix(mix(bg, accent, 0.40), blue, 0.35),
+            mix(mix(bg, accent, 0.35), green, 0.35),
+            mix(bg, cyan, 0.45),
+            mix(bg, blue, 0.48),
+        )
+    else:
+        # Incoming: soft gray surface; outgoing gets a clear accent wash.
+        received = mix(bg, muted, 0.20)
+        if color_distance(received, bg) < 12:
+            received = mix(bg, fg, 0.12)
+        sent_candidates = (
+            mix(bg, accent, 0.34),
+            mix(bg, accent, 0.42),
+            mix(bg, accent, 0.52),
+            mix(mix(bg, accent, 0.36), cyan, 0.28),
+            mix(mix(bg, accent, 0.36), blue, 0.30),
+            mix(mix(bg, accent, 0.34), green, 0.28),
+            mix(bg, cyan, 0.34),
+            mix(bg, blue, 0.36),
+        )
+
+    sent = max(sent_candidates, key=lambda candidate: color_distance(candidate, received))
+    if color_distance(sent, received) < min_distance:
+        for amount in (0.70, 0.60, 0.50, 0.40):
+            fallback = (
+                mix(dark_bg, accent, amount)
+                if colors["mode"] == "dark"
+                else mix(bg, accent, amount)
+            )
+            if color_distance(fallback, received) > color_distance(sent, received):
+                sent = fallback
+            if color_distance(sent, received) >= min_distance:
+                break
+
+    received_selected = mix(received, selection, 0.55)
+    sent_selected = mix(sent, selection, 0.45)
+    return received, received_selected, sent, sent_selected
+
+
 def nearest_semantic_color(
     hue: float, colors: dict[str, str]
 ) -> str:
@@ -354,12 +441,48 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
     )
     active_over = mix(accent, bright_fg, 0.12)
     active_ripple = mix(accent, bright_fg, 0.22)
-    sent_bg = mix(bg, accent, 0.18 if colors["mode"] == "dark" else 0.11)
-    sent_selected = mix(sent_bg, selection, 0.58)
+    received_bg, received_selected, sent_bg, sent_selected = message_bubble_colors(
+        colors
+    )
     secondary_fg = ensure_contrast(dark_fg, bg, fg, 4.5)
     secondary_over_fg = ensure_contrast(light_fg, lighter_bg, bright_fg, 4.5)
     secondary_dark_fg = ensure_contrast(dark_fg, dark_bg, fg, 4.5)
-    message_secondary_fg = ensure_contrast(dark_fg, lighter_bg, fg, 4.5)
+    bubble_text_fallback = bright_fg if colors["mode"] == "dark" else darker_bg
+    history_in_fg = ensure_contrast(fg, received_bg, bubble_text_fallback, 4.5)
+    history_out_fg = ensure_contrast(fg, sent_bg, bubble_text_fallback, 4.5)
+    message_secondary_fg = ensure_contrast(dark_fg, received_bg, history_in_fg, 4.5)
+    message_out_secondary_fg = ensure_contrast(
+        mix(dark_fg, accent, 0.35), sent_bg, history_out_fg, 4.5
+    )
+    # Reply author names / forwarded labels (msg*ServiceFg) and read-receipt
+    # ticks (historyOutIconFg) sit ON the bubble. After we made outgoing
+    # bubbles accent-heavy, raw accent-on-accent became unreadable.
+    in_service_fg = ensure_contrast(accent, received_bg, history_in_fg, 4.5)
+    out_service_fg = ensure_contrast(accent, sent_bg, history_out_fg, 4.5)
+    in_service_fg_selected = ensure_contrast(
+        accent, received_selected, history_in_fg, 4.5
+    )
+    out_service_fg_selected = ensure_contrast(
+        accent, sent_selected, history_out_fg, 4.5
+    )
+    out_icon_fg = ensure_contrast(
+        mix(history_out_fg, accent, 0.20), sent_bg, history_out_fg, 3.5
+    )
+    out_icon_fg_selected = ensure_contrast(
+        mix(history_out_fg, accent, 0.20), sent_selected, history_out_fg, 3.5
+    )
+    in_reply_bar = ensure_contrast(accent, received_bg, history_in_fg, 3.0)
+    out_reply_bar = ensure_contrast(accent, sent_bg, history_out_fg, 3.0)
+    in_reply_bar_selected = ensure_contrast(
+        accent, received_selected, history_in_fg, 3.0
+    )
+    out_reply_bar_selected = ensure_contrast(
+        accent, sent_selected, history_out_fg, 3.0
+    )
+    link_in_fg = ensure_contrast(accent, received_bg, history_in_fg, 4.5)
+    link_out_fg = ensure_contrast(accent, sent_bg, history_out_fg, 4.5)
+    mono_in_fg = ensure_contrast(colors["cyan"], received_bg, history_in_fg, 4.5)
+    mono_out_fg = ensure_contrast(colors["cyan"], sent_bg, history_out_fg, 4.5)
     icon_fg = ensure_contrast(dark_fg, bg, fg, 3.0)
     icon_dark_fg = ensure_contrast(dark_fg, dark_bg, fg, 3.0)
 
@@ -473,38 +596,49 @@ def palette_overrides(colors: dict[str, str]) -> dict[str, str]:
         "emojiIconFg": icon_fg,
         "emojiIconFgActive": accent,
         "stickerPanDeleteBg": "#000000",
-        "historyTextInFg": fg,
-        "historyTextOutFg": fg,
-        "historyLinkInFg": accent,
-        "historyLinkOutFg": accent,
-        "historyOutIconFg": accent,
-        "historySendingOutIconFg": icon_fg,
+        "historyTextInFg": history_in_fg,
+        "historyTextOutFg": history_out_fg,
+        "historyLinkInFg": link_in_fg,
+        "historyLinkOutFg": link_out_fg,
+        "historyOutIconFg": out_icon_fg,
+        "historyOutIconFgSelected": out_icon_fg_selected,
+        "historySendingOutIconFg": ensure_contrast(
+            mix(history_out_fg, muted, 0.35), sent_bg, history_out_fg, 3.0
+        ),
         "historyUnreadBarBg": dark_bg,
         "historyUnreadBarFg": accent,
         "historyForwardChooseBg": "#0000004c",
-        "msgInBg": lighter_bg,
-        "msgInBgSelected": selection,
+        "msgInBg": received_bg,
+        "msgInBgSelected": received_selected,
         "msgOutBg": sent_bg,
         "msgOutBgSelected": sent_selected,
         "msgSelectOverlay": rgba(accent, "4c"),
         "msgStickerOverlay": rgba(accent, "7f"),
-        "msgInServiceFg": accent,
-        "msgOutServiceFg": accent,
+        "msgInServiceFg": in_service_fg,
+        "msgInServiceFgSelected": in_service_fg_selected,
+        "msgOutServiceFg": out_service_fg,
+        "msgOutServiceFgSelected": out_service_fg_selected,
         "msgInShadow": "#00000024",
         "msgInShadowSelected": "#00000030",
         "msgOutShadow": "#00000024",
         "msgOutShadowSelected": "#00000030",
         "msgInDateFg": message_secondary_fg,
-        "msgInDateFgSelected": secondary_over_fg,
-        "msgOutDateFg": mix(fg, accent, 0.62),
-        "msgOutDateFgSelected": mix(fg, accent, 0.48),
+        "msgInDateFgSelected": ensure_contrast(
+            light_fg, received_selected, history_in_fg, 4.5
+        ),
+        "msgOutDateFg": message_out_secondary_fg,
+        "msgOutDateFgSelected": ensure_contrast(
+            mix(fg, accent, 0.40), sent_selected, history_out_fg, 4.5
+        ),
         "msgServiceFg": active_fg,
         "msgServiceBg": rgba(accent, "90"),
         "msgServiceBgSelected": rgba(selection, "b8"),
-        "msgInReplyBarColor": accent,
-        "msgOutReplyBarColor": accent,
-        "msgInMonoFg": colors["cyan"],
-        "msgOutMonoFg": colors["cyan"],
+        "msgInReplyBarColor": in_reply_bar,
+        "msgInReplyBarSelColor": in_reply_bar_selected,
+        "msgOutReplyBarColor": out_reply_bar,
+        "msgOutReplyBarSelColor": out_reply_bar_selected,
+        "msgInMonoFg": mono_in_fg,
+        "msgOutMonoFg": mono_out_fg,
         "msgFileInBg": accent,
         "msgFileInBgOver": active_over,
         "msgFileInBgSelected": mix(accent, selection, 0.35),
@@ -668,10 +802,15 @@ def png_solid_color(color: str) -> bytes:
 def build_theme_package(palette: str, wallpaper_color: str) -> bytes:
     """Bundle the palette and wallpaper in Telegram's ZIP theme format."""
     output = io.BytesIO()
+    encoded = palette.encode("utf-8")
+    background = png_solid_color(wallpaper_color)
     with zipfile.ZipFile(output, "w") as archive:
+        # Ship both names: loadcolors accepts *.tdesktop-palette packages, while
+        # Chat settings "Choose from file" historically looks for colors.tdesktop-theme.
         for name, content in (
-            ("colors.tdesktop-palette", palette.encode("utf-8")),
-            ("background.png", png_solid_color(wallpaper_color)),
+            ("colors.tdesktop-theme", encoded),
+            ("colors.tdesktop-palette", encoded),
+            ("background.png", background),
         ):
             entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             entry.compress_type = zipfile.ZIP_STORED
@@ -681,7 +820,38 @@ def build_theme_package(palette: str, wallpaper_color: str) -> bytes:
     return output.getvalue()
 
 
+def ensure_theme_extension_alias(path: Path) -> None:
+    """Hard-link .tdesktop-theme ↔ .tdesktop-palette when possible."""
+    name = path.name
+    if name.endswith(".tdesktop-theme"):
+        alias = path.with_name(name[: -len(".tdesktop-theme")] + ".tdesktop-palette")
+    elif name.endswith(".tdesktop-palette"):
+        alias = path.with_name(name[: -len(".tdesktop-palette")] + ".tdesktop-theme")
+    else:
+        return
+
+    try:
+        if alias.exists() or alias.is_symlink():
+            if alias.samefile(path):
+                return
+            alias.unlink()
+        os.link(path, alias)
+    except OSError:
+        # Cross-device or permission issues: fall back to a second in-place copy.
+        try:
+            write_if_changed(alias, path.read_bytes())
+        except OSError:
+            pass
+
+
 def write_if_changed(path: Path, content: str | bytes) -> bool:
+    """Update the theme package without breaking Telegram's file watcher.
+
+    Telegram uses QFileSystemWatcher on the applied path. Atomic replace
+    (tempfile + os.replace) changes the inode, so inotify drops the watch and
+    later Omarchy theme switches no longer live-reload. Overwriting in place
+    keeps the same inode and the watcher stays attached.
+    """
     data = content.encode("utf-8") if isinstance(content, str) else content
     try:
         if path.read_bytes() == data:
@@ -690,6 +860,14 @@ def write_if_changed(path: Path, content: str | bytes) -> bool:
         pass
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        with path.open("r+b") as stream:
+            stream.write(data)
+            stream.truncate()
+            stream.flush()
+            os.fsync(stream.fileno())
+        return True
+
     descriptor, temporary = tempfile.mkstemp(
         dir=path.parent, prefix=f".{path.name}."
     )
@@ -747,6 +925,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             output = args.output.expanduser()
             changed = write_if_changed(output, package)
+            # Keep a same-inode sibling with the other extension so either
+            # "Import existing theme" (*.tdesktop-theme) or loadcolors
+            # (*.tdesktop-palette) can point at one watched file.
+            ensure_theme_extension_alias(output)
             print(f"{'updated' if changed else 'unchanged'}: {output}")
         return 0
     except ThemeError as error:
